@@ -25,7 +25,8 @@ export class UserEditView extends View<User, UserProps> {
     }
 
     attachSubViews(): void {
-        new UserFormView(this.regions.userForm, this.model).render()
-        new UserDetailView(this.regions.userShow, this.model).render()
+        new UserDetailView(this.regions.userShow, this.model).render();
+        new UserFormView(this.regions.userForm, this.model).render();
     }
+
 }

@@ -1,6 +1,4 @@
-import { Collection } from "./lib/Collection";
-import { View } from "./lib/View";
-import { User, UserProps } from "./User";
+import { Collection } from "mongoose";
 
 export class UserListView extends View<User, UserProps> {
   collection: Collection<User, UserProps>;

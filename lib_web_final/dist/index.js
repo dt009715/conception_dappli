@@ -5,7 +5,43 @@
       __defProp(target, name, { get: all3[name], enumerable: true });
   };
 
-  // src/lib/attributes.ts
+  // src/lib/Model.ts
+  var Model = class {
+    constructor(attributes, events, sync) {
+      this.attributes = attributes;
+      this.events = events;
+      this.sync = sync;
+    }
+    get get() {
+      return this.attributes.get;
+    }
+    get on() {
+      return this.events.on;
+    }
+    get trigger() {
+      return this.events.trigger;
+    }
+    set(update) {
+      this.attributes.set(update);
+      this.events.trigger("change");
+    }
+    fetch() {
+      const id = this.get("id");
+      if (!id) throw new Error("Cannot fetch without ID");
+      this.sync.fetch(id).then((response) => {
+        this.set(response.data);
+      });
+    }
+    save() {
+      this.sync.save(this.attributes.getAll()).then((response) => {
+        this.trigger("save");
+      }).catch(() => {
+        this.trigger("error");
+      });
+    }
+  };
+
+  // src/lib/Attributes.ts
   var Attributes = class {
     constructor(data) {
       this.data = data;
@@ -19,6 +55,23 @@
     getAll() {
       return this.data;
     }
+  };
+
+  // src/lib/Eventing.ts
+  var Eventing = class {
+    events = {};
+    on = (eventName, callback) => {
+      const handlers = this.events[eventName] || [];
+      handlers.push(callback);
+      this.events[eventName] = handlers;
+    };
+    trigger = (eventName) => {
+      const handlers = this.events[eventName];
+      if (!handlers || !handlers.length) return;
+      handlers.forEach((callback) => {
+        callback();
+      });
+    };
   };
 
   // node_modules/axios/lib/helpers/bind.js
@@ -2507,21 +2560,21 @@
     mergeConfig: mergeConfig2
   } = axios_default;
 
-  // src/lib/Eventing.ts
-  var Eventing = class {
-    events = {};
-    on = (eventName, callback) => {
-      const handlers = this.events[eventName] || [];
-      handlers.push(callback);
-      this.events[eventName] = handlers;
-    };
-    trigger = (eventName) => {
-      const handlers = this.events[eventName];
-      if (!handlers || !handlers.length) return;
-      handlers.forEach((callback) => {
-        callback();
-      });
-    };
+  // src/lib/Sync.ts
+  var Sync = class {
+    constructor(apiUrl2) {
+      this.apiUrl = apiUrl2;
+    }
+    fetch(id) {
+      return axios_default.get(`${this.apiUrl}/${id}`);
+    }
+    save(data) {
+      const { id } = data;
+      if (id) {
+        return axios_default.patch(`${this.apiUrl}/${id}`, data);
+      }
+      return axios_default.post(this.apiUrl, data);
+    }
   };
 
   // src/lib/Collection.ts
@@ -2549,78 +2602,30 @@
     }
   };
 
-  // src/lib/model.ts
-  var Model = class {
-    constructor(attributes, events, sync) {
-      this.attributes = attributes;
-      this.events = events;
-      this.sync = sync;
-    }
-    get get() {
-      return this.attributes.get;
-    }
-    get on() {
-      return this.events.on;
-    }
-    get trigger() {
-      return this.events.trigger;
-    }
-    set(update) {
-      this.attributes.set(update);
-      this.events.trigger("change");
-    }
-    fetch() {
-      const id = this.get("id");
-      if (!id) {
-        throw new Error("Cannot fetch without ID");
-      }
-      this.sync.fetch(id).then((response) => {
-        this.set(response.data);
-      });
-    }
-    save() {
-      this.sync.save(this.attributes.getAll()).then((response) => {
-        this.trigger("save");
-      }).catch(() => {
-        this.trigger("error");
-      });
-    }
-  };
-
-  // src/lib/Sync.ts
-  var Sync = class {
-    constructor(apiUrl2) {
-      this.apiUrl = apiUrl2;
-    }
-    fetch(id) {
-      return axios_default.get(`${this.apiUrl}/${id}`);
-    }
-    save(data) {
-      const { id } = data;
-      if (id) {
-        return axios_default.patch(`${this.apiUrl}/${id}`, data);
-      }
-      return axios_default.post(this.apiUrl, data);
-    }
-  };
-
   // src/User.ts
   var apiUrl = "http://localhost:3001/users";
   var User = class _User extends Model {
     static buildUser(attrs) {
-      return new _User(new Attributes(attrs), new Eventing(), new Sync(apiUrl));
+      return new _User(
+        new Attributes(attrs),
+        new Eventing(),
+        new Sync(apiUrl)
+      );
     }
     static buildUserCollection() {
-      return new Collection(apiUrl, (json) => _User.buildUser(json));
+      return new Collection(
+        apiUrl,
+        (json) => _User.buildUser(json)
+      );
     }
   };
 
-  // src/vue.ts
+  // src/lib/View.ts
   var View = class {
     constructor(parent, model) {
       this.parent = parent;
       this.model = model;
-      this.bindModel;
+      this.bindModel();
     }
     regions = {};
     regionsMap() {
@@ -2631,13 +2636,15 @@
         this.render();
       });
     }
-    bindEvents(fragments) {
-      const eventMap = this.eventsMap();
-      for (let eventKey in eventMap) {
+    bindEvents(fragment) {
+      const eventsMap = this.eventsMap();
+      for (let eventKey in eventsMap) {
         const [eventName, selector] = eventKey.split(":");
-        fragments.querySelectorAll(selector).forEach((element) => {
-          element.addEventListener(eventName, eventMap[eventKey]);
-        });
+        fragment.querySelectorAll(selector).forEach(
+          (element) => {
+            element.addEventListener(eventName, eventsMap[eventKey]);
+          }
+        );
       }
     }
     bindRegions(fragment) {
@@ -2650,6 +2657,8 @@
         }
       }
     }
+    attachSubViews() {
+    }
     render() {
       this.parent.innerHTML = "";
       const templateElement = document.createElement("template");
@@ -2661,32 +2670,156 @@
     }
   };
 
-  // src/userEdit.ts
+  // src/UserForm.ts
+  var UserFormView = class extends View {
+    template() {
+      return `
+            <div>
+                <h1>User Form</h1>
+                <label>Nom</label>
+                <input/>
+                <button class="set-name">Set Name</button>
+                <button class="set-age">Set Random Age</button>
+                <button class="save">Save</button>
+            </div>
+        `;
+    }
+    eventsMap() {
+      return {
+        "click:.set-age": this.onSetRandomAge,
+        "click:.set-name": this.onSetName,
+        "click:.save": this.onSaveClick
+      };
+    }
+    onSaveClick = () => {
+      this.model.save();
+    };
+    onSetRandomAge = () => {
+      this.model.set({ age: Math.floor(Math.random() * 99 + 1) });
+    };
+    onSetName = () => {
+      const input = this.parent.querySelector("input");
+      if (input) {
+        this.model.set({ name: input.value });
+      }
+    };
+  };
+
+  // src/UserShow.ts
+  var UserDetailView = class extends View {
+    template() {
+      return `
+            <div>
+                <h1>User Details</h1>
+                <h3>Nom: ${this.model.get("name")}</h3>
+                <h3>Age: ${this.model.get("age")}</h3>
+            </div>
+        `;
+    }
+    eventsMap() {
+      return {};
+    }
+  };
+
+  // src/UserList.ts
+  var UserListView = class extends View {
+    collection;
+    selectedUserId = null;
+    constructor(parent, user) {
+      super(parent, user);
+      this.collection = User.buildUserCollection();
+      this.initCollection();
+    }
+    initCollection() {
+      this.collection.on("change", () => {
+        this.render();
+      });
+      this.collection.fetch();
+    }
+    eventsMap() {
+      return {
+        "change:.user-select": this.onUserSelect
+      };
+    }
+    onUserSelect = () => {
+      const selectElement = this.parent.querySelector(".user-select");
+      if (selectElement) {
+        this.selectedUserId = selectElement.value;
+        const selectedUser = this.collection.models.find(
+          (user) => user.get("id") === this.selectedUserId
+        );
+        if (selectedUser) {
+          this.model.set({
+            id: selectedUser.get("name"),
+            name: selectedUser.get("name"),
+            age: selectedUser.get("age")
+          });
+          const userShowElement = document.querySelector(".user-show");
+          if (userShowElement) {
+            new UserDetailView(userShowElement, this.model).render();
+          }
+        }
+      }
+    };
+    template() {
+      return `
+            <div>
+                <h1>User List</h1>
+                <select class="user-select">
+                    <option value="">Select a user</option>
+                    ${this.renderUserOptions()}
+                </select>
+            </div>
+        `;
+    }
+    renderUserOptions() {
+      console.log("Rendering options with selectedUserId:", this.selectedUserId);
+      if (this.collection.models.length === 0) {
+        return "<option disabled>Loading...</option>";
+      }
+      return this.collection.models.map((user) => {
+        const id = user.get("id");
+        const name = user.get("name");
+        const selectedAttr = id === this.selectedUserId ? "selected" : "";
+        return `<option value="${id}" ${selectedAttr}>${name}</option>`;
+      }).join("");
+    }
+  };
+
+  // src/UserEdit.ts
   var UserEditView = class extends View {
     eventsMap() {
       return {};
     }
     regionsMap() {
       return {
+        userList: ".user-list",
         userShow: ".user-show",
         userForm: ".user-form"
       };
     }
     template() {
       return `
-        <div>
-        <div class="user-show></div>
-        <div class="user-form></div>
-        </div>`;
+            <div>
+                <div class="user-list"></div>
+                <div class="user-show"></div>
+                <div class="user-form"></div>
+            </div>
+        `;
     }
     attachSubViews() {
-      new UserFormView(this.regions.userShow, this.model).render();
-      new UserForm();
+      new UserListView(this.regions.userList, this.model).render();
+      new UserDetailView(this.regions.userShow, this.model).render();
+      new UserFormView(this.regions.userForm, this.model).render();
     }
   };
 
   // src/index.ts
   var root = document.getElementById("root");
-  var userEdit = new UserEditView(root, User.buildUser({ name: "Jane", age: 34 }));
-  userForm.render();
+  var userEdit = new UserEditView(
+    root,
+    User.buildUser({ name: "Jane Doe", age: 34 })
+  );
+  userEdit.render();
+  console.log(userEdit);
 })();
