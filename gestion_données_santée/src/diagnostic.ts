@@ -8,7 +8,7 @@ class Diagnostic extends MedicsData {
     super(id);
   }
 
-  afficherDetails(): void {
+  showDetails(): void {
     console.log(
       `Diagnostic ID: ${this.id}, Description: ${this.description}, Sévérité: ${this.severite}, Catégorie: ${this.categorie}`
     );

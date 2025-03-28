@@ -8,7 +8,7 @@ class Treatment extends MedicsData {
     super(id);
   }
 
-  afficherDetails(): void {
+  showDetails(): void {
     console.log(
       `Traitement ID: ${
         this.id

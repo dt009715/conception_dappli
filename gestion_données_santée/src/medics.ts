@@ -2,16 +2,16 @@ class Medics extends MedicsData {
   constructor(
     id: number,
     public nom: string,
-    public posologie: string,
+    public posology: string,
     public secondaryEffect: string[] = []
   ) {
     super(id);
   }
 
-  afficherDetails(): void {
+  showDetails(): void {
     console.log(
       `Médicament ID: ${this.id}, Nom: ${this.nom}, Posologie: ${
-        this.posologie
+        this.posology
       }, Effets secondaires: ${this.secondaryEffect.join(", ")}`
     );
   }
